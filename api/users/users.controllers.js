@@ -1,46 +1,51 @@
 const User = require("../../models/User");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-// require("dotenv").config();
-const { JWT_TOKEN_EXP, JWT_SECRET } = process.env;
+const { JWT_EXPIRATION_MS, JWT_SECRET } = require("../config/keys");
+
+const generateToken = (user) => {
+  const payload = {
+    id: user._id,
+    username: user.username,
+  };
+
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRATION_MS });
+};
 
 exports.signup = async (req, res, next) => {
-  const { password } = req.body;
-  const saltRounds = 10;
-  // const token = jwt.sign(JSON.stringify(payload), "asupersecretkey");
   try {
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-    req.body.password = hashedPassword;
+    const saltRounds = 10;
+    const hashPassword = await bcrypt.hash(req.body.password, saltRounds);
 
-    const newUser = await User.create(req.body);
+    const newUser = await User.create({
+      username: req.body.username,
+      password: hashPassword,
+    });
 
     const token = generateToken(newUser);
 
-    console.log("exports.signup -> hashedPassword", hashedPassword);
-
-    res.status(201).json({ message: "User has been created" });
+    res.status(201).json({ token });
   } catch (err) {
     next(err);
   }
 };
 
-exports.generateToken = async (req, res) => {
-  const { user } = req;
-  const payload = {
-    username: user.username,
-    _id: user._id,
-    // exp: Date.now() + JWT_TOKEN_EXP,
-  };
-  const token = jwt.sign(JSON.stringify(payload), JWT_SECRET, {
-    expiresIn: JWT_TOKEN_EXP,
-  });
-  res.json({ token });
-};
-
-exports.signin = async (req, res) => {
+//Sign in
+exports.signin = async (req, res, next) => {
   try {
+    const { username, password } = req.body;
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(401).json({ meesage: "Invaild credetials" });
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ meesage: "Invaild credetials" });
+    }
+    const token = generateToken(user);
+    res.status(200).json({ token, message: "Signed in succesfully" });
   } catch (err) {
-    res.status(500).json("Server Error");
+    next(err);
   }
 };
 
